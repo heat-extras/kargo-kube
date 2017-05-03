@@ -188,6 +188,10 @@ resources:
   deplhost:
     description: Deploys the deployment instance
     type: HeatLib::Instance::Basic
+    depends_on:
+      - mstr_cluster
+      - etcd_cluster
+      - node_cluster
     properties:
       name: depl
       key: { get_param: key }
@@ -281,6 +285,7 @@ resources:
 
   kargo_install_deployment:
     type: OS::Heat::SoftwareDeployment
+    depends_on: deplhost
     properties:
       config: { get_resource: kargo_install }
       server: { get_attr: [ deplhost, instance_uuid ] }
