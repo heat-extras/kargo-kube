@@ -297,7 +297,11 @@ resources:
 
   kargo_deploy:
     type: Kargo::Deploy::Kargo
-    depends_on: kargo_config
+    depends_on:
+      - kargo_config
+      - mstr_ssh_key_pub
+      - etcd_ssh_key_pub
+      - node_ssh_key_pub
     properties:
       instance: { get_attr: [ deplhost, instance_uuid ] }
       node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
