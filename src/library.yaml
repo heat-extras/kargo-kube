@@ -6,3 +6,6 @@ resource_registry:
   "Kargo::SSHkey::Public":                       scripts/ssh_pub.yaml
   "Kargo::SSHkey::Private":                      scripts/ssh_pvt.yaml
   "Kargo::Install::Packages":                    scripts/install_packages.yaml
+  "Kargo::Install::Kargo":                       scripts/install_kargo.yaml
+  "Kargo::Configure::Kargo":                     scripts/configure_kargo.yaml
+  "Kargo::Deploy::Kargo":                        scripts/deploy_kargo.yaml

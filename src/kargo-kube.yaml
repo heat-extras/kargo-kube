@@ -171,7 +171,7 @@ resources:
     description: Deploys the node servers
     type: HeatLib::Cluster::Basic
     properties:
-      count: 2
+      count: 4
       name: node
       key: { get_param: key }
       image: { get_param: node_image }
@@ -273,90 +273,35 @@ resources:
         - CREATE
 
   kargo_install:
-    type: OS::Heat::SoftwareConfig
-    properties:
-      group: script
-      inputs:
-        - name: http_proxy
-        - name: https_proxy
-      outputs:
-        - name: status
-      config: { get_file: scripts/kargo/install.sh }
-
-  kargo_install_deployment:
-    type: OS::Heat::SoftwareDeployment
+    type: Kargo::Install::Kargo
     depends_on: deplhost
     properties:
-      config: { get_resource: kargo_install }
-      server: { get_attr: [ deplhost, instance_uuid ] }
-      signal_transport: HEAT_SIGNAL
-      input_values:
-        http_proxy: { get_param: http_proxy }
-        https_proxy: { get_param: https_proxy }
-      actions:
-        - CREATE
+      instance: { get_attr: [ deplhost, instance_uuid ] }
+      http_proxy: { get_param: http_proxy }
+      https_proxy: { get_param: https_proxy }
 
   kargo_config:
-    type: OS::Heat::SoftwareConfig
+    type: Kargo::Configure::Kargo
+    depends_on: kargo_install
     properties:
-      group: script
-      inputs:
-        - name: mstr_names
-        - name: mstr_ips
-        - name: etcd_names
-        - name: etcd_ips
-        - name: node_names
-        - name: node_ips
-        - name: http_proxy
-        - name: https_proxy
-      outputs:
-        - name: status
-      config: { get_file: scripts/kargo/configure.sh }
+      instance: { get_attr: [ deplhost, instance_uuid ] }
+      mstr_names: { get_attr: [ mstr_cluster, cluster_instances_names ] }
+      mstr_ips: { get_attr: [ mstr_cluster, cluster_instances_first_addresses ] }
+      etcd_names: { get_attr: [ etcd_cluster, cluster_instances_names ] }
+      etcd_ips: { get_attr: [ etcd_cluster, cluster_instances_first_addresses ] }
+      node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
+      node_ips: { get_attr: [ node_cluster, cluster_instances_first_addresses ] }
+      http_proxy: { get_param: http_proxy }
+      https_proxy: { get_param: https_proxy }
 
-  kargo_config_deployment:
-    type: OS::Heat::SoftwareDeployment
-    depends_on: kargo_install_deployment
-    properties:
-      config: { get_resource: kargo_config }
-      server: { get_attr: [ deplhost, instance_uuid ] }
-      signal_transport: HEAT_SIGNAL
-      input_values:
-        mstr_names: { get_attr: [ mstr_cluster, cluster_instances_names ] }
-        mstr_ips: { get_attr: [ mstr_cluster, cluster_instances_first_addresses ] }
-        etcd_names: { get_attr: [ etcd_cluster, cluster_instances_names ] }
-        etcd_ips: { get_attr: [ etcd_cluster, cluster_instances_first_addresses ] }
-        node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
-        node_ips: { get_attr: [ node_cluster, cluster_instances_first_addresses ] }
-        http_proxy: { get_param: http_proxy }
-        https_proxy: { get_param: https_proxy }
-      actions:
-        - CREATE
-        - UPDATE
 
   kargo_deploy:
-    type: OS::Heat::SoftwareConfig
+    type: Kargo::Deploy::Kargo
+    depends_on: kargo_config
     properties:
-      group: script
-      inputs:
-        - name: node_names
-        - name: node_ips
-      outputs:
-        - name: status
-      config: { get_file: scripts/kargo/deploy.sh }
-
-  kargo_deploy_deployment:
-    type: OS::Heat::SoftwareDeployment
-    depends_on: kargo_config_deployment
-    properties:
-      config: { get_resource: kargo_deploy }
-      server: { get_attr: [ deplhost, instance_uuid ] }
-      signal_transport: HEAT_SIGNAL
-      input_values:
-        node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
-        node_ips: { get_attr: [ node_cluster, cluster_instances_first_addresses ] }
-      actions:
-        - CREATE
-        - UPDATE
+      instance: { get_attr: [ deplhost, instance_uuid ] }
+      node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
+      node_ips: { get_attr: [ node_cluster, cluster_instances_first_addresses ] }
 
 outputs:
   ssh_pub_key:
@@ -366,19 +311,19 @@ outputs:
     value: { get_attr: [ ssh_key_gen, private_key ] }
 
   kargo_install_status:
-    value: { get_attr: [ kargo_install_deployment, status ] }
+    value: { get_attr: [ kargo_install, install_status ] }
 
   kargo_install_stderr:
-    value: { get_attr: [ kargo_install_deployment, deploy_stderr ]  }
+    value: { get_attr: [ kargo_install, install_stderr ]  }
 
   kargo_config_status:
-    value: { get_attr: [ kargo_config_deployment, status ] }
+    value: { get_attr: [ kargo_config, install_status ] }
 
   kargo_config_stderr:
-    value: { get_attr: [ kargo_config_deployment, deploy_stderr ] }
+    value: { get_attr: [ kargo_config, install_stderr ] }
 
   kargo_deploy_status:
-    value: { get_attr: [ kargo_deploy_deployment, status ] }
+    value: { get_attr: [ kargo_deploy, install_status ] }
 
   kargo_deploy_stderr:
-    value: { get_attr: [ kargo_deploy_deployment, deploy_stderr ] }
+    value: { get_attr: [ kargo_deploy, install_stderr ] }

@@ -1,0 +1,91 @@
+heat_template_version: 2015-10-15
+
+description: >
+  Template to install kargo on the server
+
+parameters:
+
+  mstr_names:
+    description: Names of the master instances
+    type: json
+
+  mstr_ips:
+    description: Ip's of the Master instances
+    type: json
+
+  etcd_names:
+    description: Names of the etcd instances
+    type: json
+
+  etcd_ips:
+    description: Ip's of the etcd instances
+    type: json
+
+  node_names:
+    description: Names of the node instances
+    type: json
+
+  node_ips:
+    description: Ip's of the node instances
+    type: json
+
+  http_proxy:
+    description: HTTP Proxy for agents installation
+    type: string
+    default: "none"
+
+  https_proxy:
+    description: HTTPS Proxy for agents installation
+    type: string
+    default: "none"
+
+  instance:
+    type: string
+    description: The instance where this Software Configuration should be applied
+    constraints:
+      - custom_constraint: nova.server
+
+resources:
+
+  install:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: mstr_names
+        - name: mstr_ips
+        - name: etcd_names
+        - name: etcd_ips
+        - name: node_names
+        - name: node_ips
+        - name: http_proxy
+        - name: https_proxy
+      outputs:
+        - name: status
+      config: { get_file: kargo/configure.sh }
+
+  install_deployment:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      config: { get_resource: install }
+      server: { get_param: instance }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        mstr_names: { get_param: mstr_names }
+        mstr_ips: { get_param: mstr_ips }
+        etcd_names: { get_param: etcd_names }
+        etcd_ips: { get_param: etcd_ips }
+        node_names: { get_param: node_names }
+        node_ips: { get_param: node_ips }
+        http_proxy: { get_param: http_proxy }
+        https_proxy: { get_param: https_proxy }
+      actions:
+        - CREATE
+        - UPDATE
+
+outputs:
+  install_status:
+    value: { get_attr: [install_deployment, status] }
+
+  install_stderr:
+    value: { get_attr: [install_deployment, deploy_stderr] }
