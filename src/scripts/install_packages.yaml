@@ -1,0 +1,37 @@
+heat_template_version: 2015-10-15
+
+description: >
+  Template to deploy packages to hosts
+
+parameters:
+
+  servers:
+    type: json
+    description: The instances where this Software Configuration should be applied
+
+resources:
+
+  install:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      outputs:
+        - name: status
+      config: { get_file: lib/install_packages.sh }
+
+  install_deployment:
+    type: OS::Heat::SoftwareDeploymentGroup
+    properties:
+      config: { get_resource: install }
+      servers: { get_param: servers }
+      signal_transport: HEAT_SIGNAL
+      actions:
+        - CREATE
+        - UPDATE
+
+outputs:
+  install_status:
+    value: { get_attr: [install_deployment, status] }
+
+  install_stderr:
+    value: { get_attr: [install_deployment, deploy_stderr] }

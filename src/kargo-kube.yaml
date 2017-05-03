@@ -1,0 +1,379 @@
+heat_template_version: 2015-10-15
+
+description: Main Template to create a Kargo Kubernetes cluster
+
+parameter_groups:
+
+parameters:
+
+  key:
+    type: string
+    constraints:
+      - custom_constraint: nova.keypair
+
+  external_network:
+    type: string
+    constraints:
+      - custom_constraint: neutron.network
+
+  http_proxy:
+    type: string
+    description: The http proxy to be used during the package installation
+    default: "none"
+
+  https_proxy:
+    type: string
+    description: The https proxy to be used during the package installation
+    default: "none"
+
+  dns_nameservers:
+    type: comma_delimited_list
+    default: []
+
+  deployhost_image:
+    type: string
+    constraints:
+      - custom_constraint: glance.image
+
+  deployhost_flavor:
+    description: Flavor for the Author servers
+    type: string
+    constraints:
+      - custom_constraint: nova.flavor
+
+  master_image:
+    type: string
+    constraints:
+      - custom_constraint: glance.image
+
+  master_flavor:
+    description: Flavor for the Author servers
+    type: string
+    constraints:
+      - custom_constraint: nova.flavor
+
+  etcd_image:
+    type: string
+    constraints:
+      - custom_constraint: glance.image
+
+  etcd_flavor:
+    description: Flavor for the Author servers
+    type: string
+    constraints:
+      - custom_constraint: nova.flavor
+
+  node_image:
+    type: string
+    constraints:
+      - custom_constraint: glance.image
+
+  node_flavor:
+    description: Flavor for the Author servers
+    type: string
+    constraints:
+      - custom_constraint: nova.flavor
+
+  server_policy:
+    type: string
+    description: The server deployment policy affinity or anti-affinity for clusters
+    default: anti-affinity
+    constraints:
+      - allowed_values:
+        - affinity
+        - anti-affinity
+
+resources:
+
+# Networks
+  kube_router:
+    type: HeatLib::Network::Router
+    properties:
+      name: kube
+      external_network: { get_param: external_network }
+
+  depl_network:
+    type: HeatLib::Network::Subnet
+    properties:
+      name: dephost
+      cidr: 192.168.10.0/24
+      router_id: { get_attr: [ kube_router, router_uuid ] }
+      dns_nameservers: { get_param: dns_nameservers }
+
+  mstr_network:
+    type: HeatLib::Network::Subnet
+    properties:
+      name: mstnet
+      cidr: 192.168.20.0/24
+      router_id: { get_attr: [ kube_router, router_uuid ] }
+      dns_nameservers: { get_param: dns_nameservers }
+
+  etcd_network:
+    type: HeatLib::Network::Subnet
+    properties:
+      name: etcdnet
+      cidr: 192.168.30.0/24
+      router_id: { get_attr: [ kube_router, router_uuid ] }
+      dns_nameservers: { get_param: dns_nameservers }
+
+  node_network:
+    type: HeatLib::Network::Subnet
+    properties:
+      name: nodenet
+      cidr: 192.168.40.0/22
+      router_id: { get_attr: [ kube_router, router_uuid ] }
+      dns_nameservers: { get_param: dns_nameservers }
+
+  ### Instance Access Parameters ###
+  security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: allow-all-sg
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+
+    ### Clusters
+  mstr_cluster:
+    description: Deploys the Master servers
+    type: HeatLib::Cluster::Basic
+    properties:
+      count: 2
+      name: mstr
+      key: { get_param: key }
+      image: { get_param: master_image }
+      flavor: { get_param: master_flavor }
+      security_groups:
+        - { get_resource: security_group }
+      subnets:
+        - { get_attr: [ mstr_network, subnet_uuid ] }
+      server_policy: { get_param: server_policy }
+      http_proxy: { get_param: http_proxy }
+      https_proxy: { get_param: https_proxy }
+
+  etcd_cluster:
+    description: Deploys the etcd servers
+    type: HeatLib::Cluster::Basic
+    properties:
+      count: 3
+      name: etcd
+      key: { get_param: key }
+      image: { get_param: etcd_image }
+      flavor: { get_param: etcd_flavor }
+      security_groups:
+        - { get_resource: security_group }
+      subnets:
+        - { get_attr: [ etcd_network, subnet_uuid ] }
+      server_policy: { get_param: server_policy }
+      http_proxy: { get_param: http_proxy }
+      https_proxy: { get_param: https_proxy }
+
+  node_cluster:
+    description: Deploys the node servers
+    type: HeatLib::Cluster::Basic
+    properties:
+      count: 2
+      name: node
+      key: { get_param: key }
+      image: { get_param: node_image }
+      flavor: { get_param: node_flavor }
+      security_groups:
+        - { get_resource: security_group }
+      subnets:
+        - { get_attr: [ node_network, subnet_uuid ] }
+      server_policy: { get_param: server_policy }
+      http_proxy: { get_param: http_proxy }
+      https_proxy: { get_param: https_proxy }
+
+  ### Deployment host
+  deplhost:
+    description: Deploys the deployment instance
+    type: HeatLib::Instance::Basic
+    properties:
+      name: depl
+      key: { get_param: key }
+      image: { get_param: deployhost_image }
+      flavor: { get_param: deployhost_flavor }
+      security_groups:
+        - { get_resource: security_group }
+      subnets:
+        - { get_attr: [ depl_network, subnet_uuid ] }
+      http_proxy: { get_param: http_proxy }
+      https_proxy: { get_param: https_proxy }
+
+  ### Software Install
+  ssh_key_gen:
+      type: OS::Nova::KeyPair
+      properties:
+        save_private_key: true
+        name: kargo-key
+
+  mstr_ssh_key_pub:
+    type: Kargo::SSHkey::Public
+    depends_on: mstr_cluster
+    properties:
+      ssh_pub_key: { get_attr: [ ssh_key_gen, public_key ] }
+      servers: { get_attr: [ mstr_cluster, cluster_instances_uuids ] }
+
+  mstr_inst_packages:
+    type: Kargo::Install::Packages
+    depends_on: mstr_cluster
+    properties:
+      servers: { get_attr: [ mstr_cluster, cluster_instances_uuids ] }
+
+  etcd_ssh_key_pub:
+    type: Kargo::SSHkey::Public
+    depends_on: etcd_cluster
+    properties:
+      ssh_pub_key: { get_attr: [ ssh_key_gen, public_key ] }
+      servers: { get_attr: [ etcd_cluster, cluster_instances_uuids ] }
+
+  etcd_inst_packages:
+    type: Kargo::Install::Packages
+    depends_on: etcd_cluster
+    properties:
+      servers: { get_attr: [ etcd_cluster, cluster_instances_uuids ] }
+
+  node_ssh_key_pub:
+    type: Kargo::SSHkey::Public
+    depends_on: node_cluster
+    properties:
+      ssh_pub_key: { get_attr: [ ssh_key_gen, public_key ] }
+      servers: { get_attr: [ node_cluster, cluster_instances_uuids ] }
+
+  node_inst_packages:
+    type: Kargo::Install::Packages
+    depends_on: node_cluster
+    properties:
+      servers: { get_attr: [ node_cluster, cluster_instances_uuids ] }
+
+  depl_ssh_key_pvt_install:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: ssh_pvt_key
+      outputs:
+        - name: status
+      config: { get_file: scripts/ssh/add_private_key.sh }
+
+  depl_ssh_key_pvt_install_deployment:
+    type: OS::Heat::SoftwareDeployment
+    depends_on: deplhost
+    properties:
+      config: { get_resource: depl_ssh_key_pvt_install }
+      server: { get_attr: [ deplhost, instance_uuid ] }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        ssh_pvt_key: { get_attr: [ ssh_key_gen, private_key ] }
+      actions:
+        - CREATE
+
+  kargo_install:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: http_proxy
+        - name: https_proxy
+      outputs:
+        - name: status
+      config: { get_file: scripts/kargo/install.sh }
+
+  kargo_install_deployment:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      config: { get_resource: kargo_install }
+      server: { get_attr: [ deplhost, instance_uuid ] }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        http_proxy: { get_param: http_proxy }
+        https_proxy: { get_param: https_proxy }
+      actions:
+        - CREATE
+
+  kargo_config:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: mstr_names
+        - name: mstr_ips
+        - name: etcd_names
+        - name: etcd_ips
+        - name: node_names
+        - name: node_ips
+        - name: http_proxy
+        - name: https_proxy
+      outputs:
+        - name: status
+      config: { get_file: scripts/kargo/configure.sh }
+
+  kargo_config_deployment:
+    type: OS::Heat::SoftwareDeployment
+    depends_on: kargo_install_deployment
+    properties:
+      config: { get_resource: kargo_config }
+      server: { get_attr: [ deplhost, instance_uuid ] }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        mstr_names: { get_attr: [ mstr_cluster, cluster_instances_names ] }
+        mstr_ips: { get_attr: [ mstr_cluster, cluster_instances_first_addresses ] }
+        etcd_names: { get_attr: [ etcd_cluster, cluster_instances_names ] }
+        etcd_ips: { get_attr: [ etcd_cluster, cluster_instances_first_addresses ] }
+        node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
+        node_ips: { get_attr: [ node_cluster, cluster_instances_first_addresses ] }
+        http_proxy: { get_param: http_proxy }
+        https_proxy: { get_param: https_proxy }
+      actions:
+        - CREATE
+        - UPDATE
+
+  kargo_deploy:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: node_names
+        - name: node_ips
+      outputs:
+        - name: status
+      config: { get_file: scripts/kargo/deploy.sh }
+
+  kargo_deploy_deployment:
+    type: OS::Heat::SoftwareDeployment
+    depends_on: kargo_config_deployment
+    properties:
+      config: { get_resource: kargo_deploy }
+      server: { get_attr: [ deplhost, instance_uuid ] }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        node_names: { get_attr: [ node_cluster, cluster_instances_names ] }
+        node_ips: { get_attr: [ node_cluster, cluster_instances_first_addresses ] }
+      actions:
+        - CREATE
+        - UPDATE
+
+outputs:
+  ssh_pub_key:
+    value: { get_attr: [ ssh_key_gen, public_key ] }
+
+  ssh_pvt_key:
+    value: { get_attr: [ ssh_key_gen, private_key ] }
+
+  kargo_install_status:
+    value: { get_attr: [ kargo_install_deployment, status ] }
+
+  kargo_install_stderr:
+    value: { get_attr: [ kargo_install_deployment, deploy_stderr ]  }
+
+  kargo_config_status:
+    value: { get_attr: [ kargo_config_deployment, status ] }
+
+  kargo_config_stderr:
+    value: { get_attr: [ kargo_config_deployment, deploy_stderr ] }
+
+  kargo_deploy_status:
+    value: { get_attr: [ kargo_deploy_deployment, status ] }
+
+  kargo_deploy_stderr:
+    value: { get_attr: [ kargo_deploy_deployment, deploy_stderr ] }

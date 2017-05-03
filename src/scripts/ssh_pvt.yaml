@@ -1,0 +1,44 @@
+heat_template_version: 2015-10-15
+
+description: >
+  Template to deploy and SSH private Key to host
+
+parameters:
+
+  ssh_pvt_key:
+    type: string
+    description: SSH private key
+
+  instance:
+    type: string
+    description: The instance where this Software Configuration should be applied
+
+resources:
+
+  install:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: ssh_pvt_key
+      outputs:
+        - name: status
+      config: { get_file: ssh/add_private_key.sh }
+
+  install_deployment:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      config: { get_resource: install }
+      server: { get_param: instance }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        ssh_pub_key: { get_param: ssh_pvt_key }
+      actions:
+        - CREATE
+
+outputs:
+  install_status:
+    value: { get_attr: [install_deployment, status] }
+
+  install_stderr:
+    value: { get_attr: [install_deployment, deploy_stderr] }

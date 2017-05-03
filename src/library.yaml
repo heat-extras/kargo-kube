@@ -1,0 +1,8 @@
+### Enviroment File for Kargo install
+
+resource_registry:
+  #####
+  # Custome Libraries
+  "Kargo::SSHkey::Public":                       scripts/ssh_pub.yaml
+  "Kargo::SSHkey::Private":                      scripts/ssh_pvt.yaml
+  "Kargo::Install::Packages":                    scripts/install_packages.yaml
