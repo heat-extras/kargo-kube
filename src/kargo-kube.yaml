@@ -171,7 +171,7 @@ resources:
     description: Deploys the node servers
     type: HeatLib::Cluster::Basic
     properties:
-      count: 4
+      count: 2
       name: node
       key: { get_param: key }
       image: { get_param: node_image }
